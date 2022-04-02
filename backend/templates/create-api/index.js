@@ -1,7 +1,7 @@
 const fs = require("fs");
-const consoleSuccess = "\x1b[32m";
-const consoleError = "\x1b[31m";
-const consoleClear = "\x1b[0m";
+const consoleSuccessColor = "\x1b[32m";
+const consoleErrorColor = "\x1b[31m";
+const consoleClearColors = "\x1b[0m";
 
 const readline = require("readline").createInterface({
   input: process.stdin,
@@ -10,56 +10,79 @@ const readline = require("readline").createInterface({
 
 const templateTypes = ["controllers", "models", "routes", "validators"];
 
-const templateIndexes = templateTypes.map((type) => {
+const templateFilePaths = templateTypes.map((type) => {
   return `${__dirname}/template-files/${type}/index.js`;
 });
 
-const createAPIFiles = () => {
-  readline.question(
-    "\n\n What is the name of the database table you'd like to create an API for? ",
-    (databaseTableName) => {
-      const mapObj = {
-        $databaseTableName: databaseTableName,
-      };
-      fs.access(`src/${templateTypes[0]}/${databaseTableName}.js`, fs.F_OK, (err) => {
-        //If API files don't exist, create them
-        if (err) {
-          templateIndexes.forEach((templateIndex, i) => {
-            fs.readFile(templateIndex, "utf8", (err, data) => {
-              let variableReplacements = data.replace(
-                /\$databaseTableName/gi,
-                (matched) => mapObj[matched]
-              );
-              if (err) {
-                return console.log(consoleError, err);
-              } else {
-                console.log(consoleSuccess, `Success! ${templateTypes[i]} created!`),
-                  console.log(consoleClear, "");
-                process.exit(1);
-              }
-              fs.appendFile(
-                `src/${templateTypes[i]}/${databaseTableName}.js`,
-                variableReplacements,
-                "utf8",
-                (err) => {
-                  if (err) return console.error(consoleError, err), console.log(consoleClear, "");
-                }
-              );
-            });
-          });
-        } else {
-          //If API files do exist, notify user in the command line and exit
-          console.log("test");
-          console.error(
-            consoleError,
-            `Files for ${databaseTableName} API already exist, please try again with a new name`
-          ),
-            console.log(consoleClear, ""),
-            createAPIFiles();
-        }
-      });
-    }
-  );
+const sayError = (message) => {
+  console.error(`${consoleErrorColor}${message}${consoleClearColors}`);
 };
 
-createAPIFiles();
+const saySuccess = (message) => {
+  console.log(`${consoleSuccessColor}${message}${consoleClearColors}`);
+}
+
+class createAPIFiles {
+
+  constructor() {
+    this.databaseTableName = "";
+    this.askTheQuestion();
+  }
+
+  askTheQuestion() {
+    readline.question(
+      "\n What is the name of the database table you'd like to create an API for? ",
+      this.handleQuestionResponse.bind(this)
+    );
+  }
+
+  handleQuestionResponse(databaseTableName) {
+    this.databaseTableName = databaseTableName;
+
+    if (this.checkFilesAlreadyExist()) {
+      sayError(`Files for "${databaseTableName}" API endpoint already exist, please try again with a new name.` );
+      this.askTheQuestion();
+    } else {
+      // We are done asking questions, close the readline so that we don't wait for more input.
+      readline.close();
+      this.generateNewFiles();
+    }
+  }
+
+  checkFilesAlreadyExist(){
+    for (const templateType of templateTypes) {
+      if (fs.existsSync(`src/${templateType}/${this.databaseTableName}.js`)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  generateNewFiles() {
+    const mapObj = { $databaseTableName: this.databaseTableName };
+
+    // Oldschool function declaration syntax, because we need to bind(), below.
+    templateFilePaths.forEach(function (templateFilePath, i) {
+      try {
+        // Read the template file.
+        let data = fs.readFileSync(templateFilePath, "utf8");
+
+        // Replace the token in the templates.
+        let variableReplacements = data.replace(/\$databaseTableName/gi,(matched) => mapObj[matched]);
+
+        // Write the new file out.
+        fs.appendFileSync(`src/${templateTypes[i]}/${this.databaseTableName}.js`,
+          variableReplacements,
+          "utf8",
+        );
+      } catch (err) {
+        sayError("generateNewFiles error:" + err);
+        return; // We are in a loop, move on to next file.
+      }
+
+      saySuccess(`Success! ${templateTypes[i]} created!`);
+    }.bind(this));
+  }
+}
+
+new createAPIFiles();
